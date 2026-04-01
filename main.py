@@ -1,11 +1,10 @@
 import cv2
 import numpy as np
 import argparse
-from utils.tracker4 import MultiSportTracker
+from utils.tracker5 import MultiSportTracker
 from  utils.view_transformer import ViewTransformer 
-from utils.configs import SPORT_CONFIGS
+from utils.configs5 import SPORT_CONFIGS
 import os
-import datetime
 import time
 
 def get_video_frame_count(video_path):
