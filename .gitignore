@@ -1,0 +1,28 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+
+# Model files
+*.onnx
+*.pt
+
+# Video files
+*.mp4
+*.avi
+
+# Virtual environment
+grad_venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Output files
+outputs/
+uploads/
