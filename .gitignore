@@ -26,3 +26,12 @@ env/
 # Output files
 outputs/
 uploads/
+
+# Models
+model/
+
+# Stubs
+*.pkl
+
+# Credentials
+*.env
