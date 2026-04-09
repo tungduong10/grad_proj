@@ -1,4 +1,11 @@
-ultralytics>=8.0.0
-opencv-python>=4.8.0
-fastapi>=0.104.0
-uvicorn>=0.24.0
+# Core Vision Utils (Lightweight)
+supervision==0.27.0.post2
+
+# Cloud compute & Environment
+modal==0.62.203
+python-dotenv==1.0.1
+
+# Server
+fastapi==0.115.6
+uvicorn==0.42.0
+python-multipart
