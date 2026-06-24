@@ -28,7 +28,7 @@ outputs/
 uploads/
 
 # Models
-model/
+models/
 
 # Stubs
 *.pkl

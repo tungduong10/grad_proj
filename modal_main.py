@@ -263,43 +263,59 @@ def process_tracker_remote(enable_team_assignment: bool = True):
                 tracks['players'][frame_num][player_id]['team'] = 0
                 tracks['players'][frame_num][player_id]['team_color'] = TEAM_COLORS[0]
 
-    print("Assigning Ball to Players...")
-    team_ball_control = []
-    import numpy as np
+    team_ball_control = None
 
-    if SPORT == "basketball":
-        from analysis.basketball_acquisition import BasketballBallAssigner
-        player_assigner = BasketballBallAssigner()
-        possession_list = player_assigner.detect_ball_possession(tracks['players'], tracks.get('ball', []))
+    if SPORT in ["football", "basketball"]:
+        print("Assigning Ball to Players...")
+        team_ball_control_list = []
+        import numpy as np
+
+        if SPORT == "basketball":
+            from analysis.basketball_acquisition import BasketballBallAssigner
+            player_assigner = BasketballBallAssigner()
+            possession_list = player_assigner.detect_ball_possession(tracks['players'], tracks.get('ball', []))
+            
+            for frame_num in range(len(tracks['players'])):
+                assigned_player = possession_list[frame_num] if frame_num < len(possession_list) else -1
+                if assigned_player != -1:
+                    tracks['players'][frame_num][assigned_player]['has_ball'] = True
+                    team_ball_control_list.append(tracks['players'][frame_num][assigned_player].get('team', 0))
+                else:
+                    if team_ball_control_list:
+                        team_ball_control_list.append(team_ball_control_list[-1])
+                    else:
+                        team_ball_control_list.append(0)
+        else:
+            player_assigner = FootballBallAssigner()
+            possession_list = [-1] * len(tracks['players'])
+            for frame_num in range(len(tracks['players'])):
+                assigned_player = -1
+                if 'ball' in tracks and frame_num < len(tracks['ball']) and 1 in tracks['ball'][frame_num]:
+                    ball_bbox = tracks['ball'][frame_num][1]['bbox']
+                    assigned_player = player_assigner.assign_ball_to_player(tracks['players'][frame_num], ball_bbox)
+                
+                possession_list[frame_num] = assigned_player
+
+                if assigned_player != -1:
+                    tracks['players'][frame_num][assigned_player]['has_ball'] = True
+                    team_ball_control_list.append(tracks['players'][frame_num][assigned_player].get('team', 0))
+                else:
+                    if team_ball_control_list:
+                        team_ball_control_list.append(team_ball_control_list[-1])
+                    else:
+                        team_ball_control_list.append(0)
+
+        team_ball_control = np.array(team_ball_control_list)
+
+        print("Detecting Passes and Interceptions...")
+        from analysis.pass_and_interception_detector import PassAndInterceptionDetector
+        pass_detector = PassAndInterceptionDetector()
+        passes = pass_detector.detect_passes(possession_list, tracks['players'])
+        interceptions = pass_detector.detect_interceptions(possession_list, tracks['players'])
         
-        for frame_num in range(len(tracks['players'])):
-            assigned_player = possession_list[frame_num] if frame_num < len(possession_list) else -1
-            if assigned_player != -1:
-                tracks['players'][frame_num][assigned_player]['has_ball'] = True
-                team_ball_control.append(tracks['players'][frame_num][assigned_player].get('team', 0))
-            else:
-                if team_ball_control:
-                    team_ball_control.append(team_ball_control[-1])
-                else:
-                    team_ball_control.append(0)
-    else:
-        player_assigner = FootballBallAssigner()
-        for frame_num in range(len(tracks['players'])):
-            assigned_player = -1
-            if 'ball' in tracks and frame_num < len(tracks['ball']) and 1 in tracks['ball'][frame_num]:
-                ball_bbox = tracks['ball'][frame_num][1]['bbox']
-                assigned_player = player_assigner.assign_ball_to_player(tracks['players'][frame_num], ball_bbox)
-
-            if assigned_player != -1:
-                tracks['players'][frame_num][assigned_player]['has_ball'] = True
-                team_ball_control.append(tracks['players'][frame_num][assigned_player].get('team', 0))
-            else:
-                if team_ball_control:
-                    team_ball_control.append(team_ball_control[-1])
-                else:
-                    team_ball_control.append(0)
-
-    team_ball_control = np.array(team_ball_control)
+        total_passes = sum(1 for p in passes if p != -1)
+        total_interceptions = sum(1 for i in interceptions if i != -1)
+        print(f"  → Detected {total_passes} passes and {total_interceptions} interceptions!")
 
     print("Drawing output frames...")
     drawer = Drawer()
