@@ -25,7 +25,7 @@ def save_video(output_video_frames, output_video_path, fps=24.0):
     except StopIteration:
         return
     
-    fourcc = cv2.VideoWriter_fourcc(*'XVID')
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     out = cv2.VideoWriter(output_video_path, fourcc, fps, (first_frame.shape[1], first_frame.shape[0]))
     out.write(first_frame)
     for frame in frame_iter:
