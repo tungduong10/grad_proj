@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Thesis Tracker Pro</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        glass: "rgba(255, 255, 255, 0.05)",
+                        glassBorder: "rgba(255, 255, 255, 0.1)",
+                    },
+                    animation: {
+                        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background: radial-gradient(circle at top left, #1a1b2e, #0d0d14 70%);
+            color: #e2e8f0;
+            min-height: 100vh;
+        }
+        
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.4);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        .upload-area {
+            border: 2px dashed rgba(147, 197, 253, 0.3);
+            transition: all 0.3s ease;
+        }
+
+        .upload-area:hover, .upload-area.dragover {
+            border-color: #3b82f6;
+            background: rgba(59, 130, 246, 0.05);
+        }
+
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0f172a;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #475569;
+        }
+
+        /* Loader */
+        .loader {
+            border: 3px solid rgba(255,255,255,0.1);
+            border-top: 3px solid #3b82f6;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center p-4">
+
+    <div class="glass-panel w-full max-w-5xl rounded-2xl p-8 relative overflow-hidden">
+        <!-- Decorative blobs -->
+        <div class="absolute -top-32 -left-32 w-64 h-64 bg-blue-600 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-pulse-slow"></div>
+        <div class="absolute -bottom-32 -right-32 w-64 h-64 bg-purple-600 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-pulse-slow" style="animation-delay: 1.5s;"></div>
+
+        <div class="relative z-10">
+            <header class="text-center mb-10">
+                <h1 class="text-4xl md:text-5xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500 mb-2">
+                    Thesis Tracker Pro
+                </h1>
+                <p class="text-slate-400 text-lg">AI-Powered Sports Analytics & Tracking</p>
+            </header>
+
+            <main class="flex flex-col gap-8">
+                <!-- Top Row: Controls -->
+                <div class="grid md:grid-cols-2 gap-8">
+                    <!-- Upload Section -->
+                    <div id="uploadZone" class="upload-area rounded-xl p-8 flex flex-col items-center justify-center text-center cursor-pointer group h-full min-h-[200px]">
+                        <input type="file" id="fileInput" class="hidden" accept=".mp4,.avi">
+                        <div class="w-16 h-16 rounded-full bg-slate-800/50 flex items-center justify-center mb-4 text-blue-400 group-hover:scale-110 transition-transform">
+                            <i class="fa-solid fa-cloud-arrow-up text-2xl"></i>
+                        </div>
+                        <h3 class="text-xl font-semibold text-slate-200 mb-1">Upload Video</h3>
+                        <p class="text-sm text-slate-500">Drag & drop or click to browse</p>
+                        <p id="fileNameDisplay" class="mt-4 text-sm text-blue-400 font-medium hidden"></p>
+                    </div>
+
+                    <!-- Right Controls (Sport, Process) -->
+                    <div class="flex flex-col justify-center gap-6">
+                        <!-- Sport Selection -->
+                        <div>
+                            <label class="block text-sm font-medium text-slate-300 mb-2">Select Sport</label>
+                            <div class="relative">
+                                <select id="sportSelect" class="w-full bg-slate-900/50 border border-slate-700 rounded-lg py-3 px-4 text-slate-200 appearance-none focus:outline-none focus:border-blue-500 transition-colors">
+                                    <option value="basketball">Basketball</option>
+                                    <option value="football">Football</option>
+                                    <option value="tennis">Tennis</option>
+                                </select>
+                                <div class="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                                    <i class="fa-solid fa-chevron-down text-sm"></i>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Process Button -->
+                        <button id="processBtn" disabled class="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-semibold py-4 px-6 rounded-lg shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-3">
+                            <span>Analyze Video</span>
+                            <i class="fa-solid fa-wand-magic-sparkles"></i>
+                        </button>
+                        
+                        <div id="statusMessage" class="text-sm text-center font-medium hidden"></div>
+                    </div>
+                </div>
+
+                <!-- Bottom Row: Result/Preview -->
+                <div class="flex flex-col items-center justify-center bg-black/40 rounded-xl border border-slate-800 overflow-hidden aspect-video relative w-full">
+                    
+                    <!-- Processing Overlay -->
+                    <div id="processingOverlay" class="absolute inset-0 bg-slate-900/80 backdrop-blur-sm z-20 flex flex-col items-center justify-center hidden">
+                        <div class="loader mb-4"></div>
+                        <h3 class="text-lg font-medium text-blue-400 mb-1">AI Processing</h3>
+                        <p class="text-xs text-slate-400 max-w-[80%] text-center">This runs remote ML inference on Modal. It might take a few minutes...</p>
+                    </div>
+
+                    <!-- Video Element -->
+                    <video id="resultVideo" class="w-full h-full object-contain hidden" controls></video>
+                    
+                    <!-- Empty State -->
+                    <div id="emptyState" class="flex flex-col items-center text-slate-600 p-8 text-center">
+                        <i class="fa-solid fa-video text-4xl mb-3 opacity-50"></i>
+                        <p class="text-sm">Processed video will appear here</p>
+                    </div>
+                </div>
+            </main>
+
+            <!-- Download Button (Hidden until ready) -->
+            <div id="downloadContainer" class="mt-6 flex justify-end hidden">
+                <a id="downloadLink" href="#" download class="bg-slate-800 hover:bg-slate-700 text-white py-2 px-5 rounded-lg border border-slate-600 transition-colors flex items-center gap-2 text-sm font-medium shadow-md">
+                    <i class="fa-solid fa-download"></i>
+                    Download Result
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Application Logic -->
+    <script>
+        const uploadZone = document.getElementById('uploadZone');
+        const fileInput = document.getElementById('fileInput');
+        const fileNameDisplay = document.getElementById('fileNameDisplay');
+        const processBtn = document.getElementById('processBtn');
+        const sportSelect = document.getElementById('sportSelect');
+        const statusMessage = document.getElementById('statusMessage');
+        
+        const processingOverlay = document.getElementById('processingOverlay');
+        const emptyState = document.getElementById('emptyState');
+        const resultVideo = document.getElementById('resultVideo');
+        
+        const downloadContainer = document.getElementById('downloadContainer');
+        const downloadLink = document.getElementById('downloadLink');
+
+        let currentFile = null;
+        let uploadedFilename = null;
+
+        // Drag & Drop
+        uploadZone.addEventListener('click', () => fileInput.click());
+        uploadZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadZone.classList.add('dragover');
+        });
+        uploadZone.addEventListener('dragleave', () => {
+            uploadZone.classList.remove('dragover');
+        });
+        uploadZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadZone.classList.remove('dragover');
+            if (e.dataTransfer.files.length) {
+                handleFile(e.dataTransfer.files[0]);
+            }
+        });
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length) {
+                handleFile(e.target.files[0]);
+            }
+        });
+
+        function handleFile(file) {
+            currentFile = file;
+            fileNameDisplay.textContent = file.name;
+            fileNameDisplay.classList.remove('hidden');
+            processBtn.disabled = false;
+            
+            // Reset UI
+            resultVideo.classList.add('hidden');
+            emptyState.classList.remove('hidden');
+            downloadContainer.classList.add('hidden');
+            statusMessage.classList.add('hidden');
+            
+            // Auto-upload
+            uploadToServer(file);
+        }
+
+        async function uploadToServer(file) {
+            statusMessage.classList.remove('hidden', 'text-red-400', 'text-green-400');
+            statusMessage.classList.add('text-blue-400');
+            statusMessage.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>Uploading...';
+            processBtn.disabled = true;
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const res = await fetch('/api/upload/', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (!res.ok) throw new Error('Upload failed');
+                
+                const data = await res.json();
+                uploadedFilename = data.filename;
+                
+                statusMessage.classList.remove('text-blue-400');
+                statusMessage.classList.add('text-green-400');
+                statusMessage.innerHTML = '<i class="fa-solid fa-check mr-2"></i>Upload complete. Ready to process.';
+                processBtn.disabled = false;
+            } catch (err) {
+                console.error(err);
+                statusMessage.classList.remove('text-blue-400');
+                statusMessage.classList.add('text-red-400');
+                statusMessage.innerHTML = '<i class="fa-solid fa-xmark mr-2"></i>Upload failed.';
+            }
+        }
+
+        processBtn.addEventListener('click', async () => {
+            if (!uploadedFilename) return;
+
+            processBtn.disabled = true;
+            processingOverlay.classList.remove('hidden');
+            emptyState.classList.add('hidden');
+            resultVideo.classList.add('hidden');
+            downloadContainer.classList.add('hidden');
+
+            const formData = new FormData();
+            formData.append('filename', uploadedFilename);
+            formData.append('sport', sportSelect.value);
+
+            statusMessage.classList.remove('text-red-400', 'text-green-400');
+            statusMessage.classList.add('text-blue-400');
+            statusMessage.innerHTML = '<i class="fa-solid fa-microchip mr-2"></i>Processing with Modal AI...';
+
+            try {
+                const res = await fetch('/api/process/', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!res.ok) {
+                    const errData = await res.json();
+                    throw new Error(errData.detail || 'Processing failed');
+                }
+
+                const data = await res.json();
+                const outputName = data.output_filename;
+
+                // Success
+                statusMessage.classList.remove('text-blue-400');
+                statusMessage.classList.add('text-green-400');
+                statusMessage.innerHTML = '<i class="fa-solid fa-check-double mr-2"></i>Processing finished!';
+                
+                processingOverlay.classList.add('hidden');
+                
+                const videoUrl = `/api/download/${encodeURIComponent(outputName)}`;
+                resultVideo.src = videoUrl;
+                resultVideo.classList.remove('hidden');
+                
+                downloadLink.href = videoUrl;
+                downloadLink.download = outputName;
+                downloadContainer.classList.remove('hidden');
+
+            } catch (err) {
+                console.error(err);
+                processingOverlay.classList.add('hidden');
+                emptyState.classList.remove('hidden');
+                
+                statusMessage.classList.remove('text-blue-400');
+                statusMessage.classList.add('text-red-400');
+                statusMessage.innerHTML = `<i class="fa-solid fa-triangle-exclamation mr-2"></i>${err.message}`;
+            } finally {
+                processBtn.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>

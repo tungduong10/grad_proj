@@ -21,18 +21,20 @@ class Drawer:
             height=21,
             outline_thickness=1
         )
-        self.has_ball_annotator = sv.TriangleAnnotator(
-            color=sv.Color.from_hex('#FF0000'), # Red
-            base=20,
-            height=15,
-            outline_thickness=1
-        )
 
-    def draw_team_ball_control(self, frame, frame_num, team_ball_control):
+    def draw_team_stats(self, frame, frame_num, team_ball_control, passes=None, interceptions=None):
         # Draw a semi-transparent rectangle
         overlay = frame.copy()
-        cv2.rectangle(overlay, (1350, 850), (1900, 970), (255, 255, 255), -1)
-        alpha = 0.4
+        
+        width = 350
+        height = 230
+        start_x = frame.shape[1] - 400
+        start_y = frame.shape[0] - 500
+        end_x = start_x + width
+        end_y = start_y + height
+        
+        cv2.rectangle(overlay, (start_x, start_y), (end_x, end_y), (0, 0, 0), -1)
+        alpha = 0.5
         cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
 
         team_ball_control_till_frame = team_ball_control[:frame_num + 1]
@@ -40,20 +42,47 @@ class Drawer:
         # Calculate ball control percentages
         team_1_num_frames = team_ball_control_till_frame[team_ball_control_till_frame == 0].shape[0]
         team_2_num_frames = team_ball_control_till_frame[team_ball_control_till_frame == 1].shape[0]
-        
-        # Avoid division by zero
         total_frames = team_1_num_frames + team_2_num_frames
         team_1_control = (team_1_num_frames / total_frames * 100) if total_frames > 0 else 0
         team_2_control = (team_2_num_frames / total_frames * 100) if total_frames > 0 else 0
+        
+        # Calculate passes
+        team_1_passes = 0
+        team_2_passes = 0
+        if passes is not None:
+            passes_till_frame = passes[:frame_num + 1]
+            team_1_passes = passes_till_frame.count(0)
+            team_2_passes = passes_till_frame.count(1)
+            
+        # Calculate interceptions
+        team_1_interceptions = 0
+        team_2_interceptions = 0
+        if interceptions is not None:
+            interceptions_till_frame = interceptions[:frame_num + 1]
+            team_1_interceptions = interceptions_till_frame.count(0)
+            team_2_interceptions = interceptions_till_frame.count(1)
 
-        cv2.putText(frame, f"Team 1 Ball Control: {team_1_control:.2f}%", (1400, 900), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 3)
-        cv2.putText(frame, f"Team 2 Ball Control: {team_2_control:.2f}%", (1400, 950), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 3)
+        text = "     Team 1       Team 2"
+        cv2.putText(frame, text, (start_x+80, start_y+30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+        
+        text = "Ball Control"
+        cv2.putText(frame, text, (start_x+10, start_y+80), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
+        text = f"{team_1_control:.1f}%       {team_2_control:.1f}%"
+        cv2.putText(frame, text, (start_x+130, start_y+80), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+
+        text = "Passes"
+        cv2.putText(frame, text, (start_x+10, start_y+120), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
+        text = f"{team_1_passes}           {team_2_passes}"
+        cv2.putText(frame, text, (start_x+130, start_y+120), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+        
+        text = "Interceptions"
+        cv2.putText(frame, text, (start_x+10, start_y+160), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
+        text = f"{team_1_interceptions}           {team_2_interceptions}"
+        cv2.putText(frame, text, (start_x+130, start_y+160), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
 
         return frame
 
-    def draw_annotations(self, video_frames, tracks, team_ball_control=None):
+    def draw_annotations(self, video_frames, tracks, team_ball_control=None, passes=None, interceptions=None):
         for frame_num, frame in enumerate(video_frames):
             annotated_frame = frame.copy()
 
@@ -83,17 +112,9 @@ class Drawer:
                     tracker_id=np.array(tracker_ids)
                 )
 
-                labels = [f"#{t_id}" for t_id in detections.tracker_id]
-
                 annotated_frame = self.ellipse_annotator.annotate(
                     scene=annotated_frame,
                     detections=detections
-                )
-
-                annotated_frame = self.label_annotator.annotate(
-                    scene=annotated_frame,
-                    detections=detections,
-                    labels=labels
                 )
 
             # --- Construct detections for Ball ---
@@ -116,30 +137,14 @@ class Drawer:
                         detections=ball_detections
                     )
 
-            # --- Construct detections for Player with Ball ---
-            has_ball_xyxy = []
-            if frame_num < len(tracks.get("players", [])):
-                for track_id, track_info in tracks["players"][frame_num].items():
-                    if track_info.get("has_ball", False):
-                        has_ball_xyxy.append(track_info["bbox"])
-            
-            if len(has_ball_xyxy) > 0:
-                has_ball_detections = sv.Detections(
-                    xyxy=np.array(has_ball_xyxy),
-                    class_id=np.array([0] * len(has_ball_xyxy))
-                )
-                annotated_frame = self.has_ball_annotator.annotate(
-                    scene=annotated_frame,
-                    detections=has_ball_detections
-                )
 
             # Draw team ball control statistics if provided
             if team_ball_control is not None:
-                annotated_frame = self.draw_team_ball_control(annotated_frame, frame_num, team_ball_control)
+                annotated_frame = self.draw_team_stats(annotated_frame, frame_num, team_ball_control, passes, interceptions)
 
             yield annotated_frame
 
-    def draw_speed_and_distance(self, video_frames, tracks):
+    def draw_speed_and_distance(self, video_frames, tracks, is_tennis=False):
         for frame_num, frame in enumerate(video_frames):
             annotated_frame = frame.copy() if hasattr(frame, 'copy') else frame
             for object_type, object_tracks in tracks.items():
@@ -157,12 +162,80 @@ class Drawer:
                             x1, y1, x2, y2 = bbox
                             position = (int((x1 + x2) / 2) - 30, int(y2) + 20) # Slightly offset for better UI
                             
-                            # Draw shadow/outline first for readability
-                            cv2.putText(annotated_frame, f"{speed:.1f} km/h", position, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 3)
-                            cv2.putText(annotated_frame, f"{distance:.1f} m", (position[0], position[1] + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 3)
-                            # Draw actual text
-                            cv2.putText(annotated_frame, f"{speed:.1f} km/h", position, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,0), 2)
-                            cv2.putText(annotated_frame, f"{distance:.1f} m", (position[0], position[1] + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,0), 2)
+                            if is_tennis:
+                                team = track_info.get('team', 0)
+                                player_text = f"Player {team + 1}"
+                                cv2.putText(annotated_frame, player_text, position, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 3)
+                                cv2.putText(annotated_frame, player_text, position, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,0), 2)
+                            else:
+                                # Draw shadow/outline first for readability
+                                cv2.putText(annotated_frame, f"{speed:.1f} km/h", position, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 3)
+                                cv2.putText(annotated_frame, f"{distance:.1f} m", (position[0], position[1] + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 3)
+                                # Draw actual text
+                                cv2.putText(annotated_frame, f"{speed:.1f} km/h", position, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,0), 2)
+                                cv2.putText(annotated_frame, f"{distance:.1f} m", (position[0], position[1] + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,0), 2)
+            
+            yield annotated_frame
+
+    def draw_tennis_stats(self, video_frames, player_stats_df, tracks=None):
+        for index, frame in enumerate(video_frames):
+            annotated_frame = frame.copy() if hasattr(frame, 'copy') else frame
+            if player_stats_df is not None and not player_stats_df.empty and index < len(player_stats_df):
+                row = player_stats_df.iloc[index]
+                
+                player_1_shot_speed = row['player_1_last_shot_speed']
+                player_2_shot_speed = row['player_2_last_shot_speed']
+                player_1_speed = row['player_1_last_player_speed']
+                player_2_speed = row['player_2_last_player_speed']
+
+                if tracks is not None and index < len(tracks.get('players', [])):
+                    for pid, t_info in tracks['players'][index].items():
+                        team = t_info.get('team', 0)
+                        if team == 0:
+                            player_1_speed = t_info.get('speed', player_1_speed)
+                        elif team == 1:
+                            player_2_speed = t_info.get('speed', player_2_speed)
+
+                avg_player_1_shot_speed = row['player_1_average_shot_speed']
+                avg_player_2_shot_speed = row['player_2_average_shot_speed']
+                avg_player_1_speed = row['player_1_average_player_speed']
+                avg_player_2_speed = row['player_2_average_player_speed']
+
+                width = 350
+                height = 230
+
+                start_x = annotated_frame.shape[1] - 400
+                start_y = annotated_frame.shape[0] - 500
+                end_x = start_x + width
+                end_y = start_y + height
+
+                overlay = annotated_frame.copy()
+                cv2.rectangle(overlay, (start_x, start_y), (end_x, end_y), (0, 0, 0), -1)
+                alpha = 0.5 
+                cv2.addWeighted(overlay, alpha, annotated_frame, 1 - alpha, 0, annotated_frame)
+
+                text = "     Player 1     Player 2"
+                cv2.putText(annotated_frame, text, (start_x+80, start_y+30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+                
+                text = "Shot Speed"
+                cv2.putText(annotated_frame, text, (start_x+10, start_y+80), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
+                text = f"{player_1_shot_speed:.1f} km/h    {player_2_shot_speed:.1f} km/h"
+                cv2.putText(annotated_frame, text, (start_x+130, start_y+80), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+
+                text = "Player Speed"
+                cv2.putText(annotated_frame, text, (start_x+10, start_y+120), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
+                text = f"{player_1_speed:.1f} km/h    {player_2_speed:.1f} km/h"
+                cv2.putText(annotated_frame, text, (start_x+130, start_y+120), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+                
+                text = "avg. S. Speed"
+                cv2.putText(annotated_frame, text, (start_x+10, start_y+160), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
+                text = f"{avg_player_1_shot_speed:.1f} km/h    {avg_player_2_shot_speed:.1f} km/h"
+                cv2.putText(annotated_frame, text, (start_x+130, start_y+160), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+                
+                text = "avg. P. Speed"
+                cv2.putText(annotated_frame, text, (start_x+10, start_y+200), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
+                text = f"{avg_player_1_speed:.1f} km/h    {avg_player_2_speed:.1f} km/h"
+                cv2.putText(annotated_frame, text, (start_x+130, start_y+200), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
             
             yield annotated_frame
 
@@ -220,8 +293,8 @@ class Drawer:
             return
 
         img_h, img_w = court_image.shape[:2]
-        # PIP size (fixed height 250px)
-        pip_h = 250
+        # PIP size (larger for better visibility)
+        pip_h = 350
         pip_w = int(img_w * (pip_h / img_h))
         
         # Scaling factors from tactical config space (cm) to original image pixels
@@ -251,10 +324,15 @@ class Drawer:
                     pt_y = int(y_cm * scale_y)
                     
                     color = player_colors.get(player_id, (0, 0, 255))
-                    # Draw filled circle
-                    cv2.circle(pip_frame, (pt_x, pt_y), 8, color, -1)
+                    
+                    # Calculate proportional radius and thickness based on court image width (approx 4%)
+                    radius = int(img_w * 0.04)
+                    thickness = max(2, int(radius * 0.15))
+                    
+                    # Draw filled circle (larger radius before scaling)
+                    cv2.circle(pip_frame, (pt_x, pt_y), radius, color, -1)
                     # Draw outline
-                    cv2.circle(pip_frame, (pt_x, pt_y), 8, (0, 0, 0), 2)
+                    cv2.circle(pip_frame, (pt_x, pt_y), radius, (0, 0, 0), thickness)
                     
             # Resize pip to fit corner
             pip_resized = cv2.resize(pip_frame, (pip_w, pip_h))
@@ -264,8 +342,8 @@ class Drawer:
             new_pip_h, new_pip_w = pip_resized.shape[:2]
             
             main_h, main_w = annotated_frame.shape[:2]
-            # Overlay PIP in bottom-left corner
-            y_offset = main_h - new_pip_h - 20
+            # Overlay PIP in top-left corner
+            y_offset = 20
             x_offset = 20
             
             # Ensure boundaries are respected

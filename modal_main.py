@@ -45,7 +45,7 @@ volume=modal.Volume.from_name("grad_proj_vol")
     volumes={"/volume": volume},
     timeout=3600
 )
-def process_tracker_remote(enable_team_assignment: bool = True):
+def process_tracker_remote(sport: str, input_filename: str, enable_team_assignment: bool = True):
     import sys
     import gc
     import torch
@@ -54,7 +54,8 @@ def process_tracker_remote(enable_team_assignment: bool = True):
     # Add root so mounted packages resolve correctly
     sys.path.insert(0, "/root")
     
-    SPORT = "football" # Change to "basketball" when you want to switch!
+    SPORT = sport.lower()
+    video_path = f'/volume/input_folder/{input_filename}'
 
     from utils import read_video, save_video, get_video_frame_count, Drawer
     from keypoints_detectors.pitch_keypoint_detector import PitchKeypointDetector
@@ -66,7 +67,6 @@ def process_tracker_remote(enable_team_assignment: bool = True):
     if SPORT == "football":
         from trackers import FootballTracker as Tracker
         from team import FootballTeamClassifier as TeamClassifier
-        video_path = '/volume/input_folder/football_test.mp4'
         model_path = '/volume/model/yolo11x_v2_best.pt'
         kp_model_path = '/volume/model/football_field_yolo11lv2.pt'
         from config.soccer_config import SoccerPitchConfiguration
@@ -81,7 +81,6 @@ def process_tracker_remote(enable_team_assignment: bool = True):
     elif SPORT == "basketball":
         from trackers.basketball_tracker import BasketballTracker as Tracker
         from team import BasketballTeamClassifier as TeamClassifier
-        video_path = '/volume/input_folder/basketball_test2.mp4'
         model_path = '/volume/model/basketball_yolo11l_v2.pt'
         kp_model_path = '/volume/model/basketball_court_yolo11lv2.pt'
         from config.basketball_config_v2 import BasketballPitchConfigurationV2
@@ -97,7 +96,6 @@ def process_tracker_remote(enable_team_assignment: bool = True):
         }
     elif SPORT == "tennis":
         from trackers.tennis_tracker import TennisTracker as Tracker
-        video_path = '/volume/input_folder/tennis_test.mp4'
         model_path = '/volume/model/tennis_yolo11l_v1.pt'
         kp_model_path = '/volume/model/tennis_court_yolo11lv1.pt'
         from config.tennis_config import TennisCourtConfiguration
@@ -174,6 +172,16 @@ def process_tracker_remote(enable_team_assignment: bool = True):
         court_keypoints, tracks['players'], camera_movement_per_frame=camera_movement
     )
 
+    if SPORT == "tennis" and "ball" in tracks:
+        tactical_ball_positions = tactical_converter.transform_players_to_tactical_view(
+            court_keypoints, tracks["ball"], camera_movement_per_frame=camera_movement
+        )
+        for frame_num, frame_positions in enumerate(tactical_ball_positions):
+            for ball_id, pos in frame_positions.items():
+                if frame_num < len(tracks["ball"]) and ball_id in tracks["ball"][frame_num]:
+                    x_cm, y_cm = pos
+                    tracks["ball"][frame_num][ball_id]["position_transformed"] = [x_cm / 100.0, y_cm / 100.0]
+
     # Debug: count how many frames actually got projections
     frames_with_projections = sum(1 for fp in tactical_player_positions if len(fp) > 0)
     total_projected_players = sum(len(fp) for fp in tactical_player_positions)
@@ -188,7 +196,8 @@ def process_tracker_remote(enable_team_assignment: bool = True):
 
     from analysis import SpeedAndDistanceEstimator
     print("Estimating Speed and Distance...")
-    speed_estimator = SpeedAndDistanceEstimator(frame_rate=30, window_size=5)
+    calculate_ball_speed = (SPORT == "tennis")
+    speed_estimator = SpeedAndDistanceEstimator(frame_rate=30, window_size=5, calculate_ball_speed=calculate_ball_speed)
     speed_estimator.add_speed_and_distance_to_tracks(tracks)
 
     del tracker
@@ -264,6 +273,8 @@ def process_tracker_remote(enable_team_assignment: bool = True):
                 tracks['players'][frame_num][player_id]['team_color'] = TEAM_COLORS[0]
 
     team_ball_control = None
+    passes = None
+    interceptions = None
 
     if SPORT in ["football", "basketball"]:
         print("Assigning Ball to Players...")
@@ -319,9 +330,20 @@ def process_tracker_remote(enable_team_assignment: bool = True):
 
     print("Drawing output frames...")
     drawer = Drawer()
-    drawn_frames_generator = drawer.draw_annotations(read_video(video_path), tracks, team_ball_control)
-    drawn_frames_generator = drawer.draw_speed_and_distance(drawn_frames_generator, tracks)
-    drawn_frames_generator = drawer.draw_keypoints(drawn_frames_generator, court_keypoints, pitch_config)
+    drawn_frames_generator = drawer.draw_annotations(read_video(video_path), tracks, team_ball_control, passes, interceptions)
+    drawn_frames_generator = drawer.draw_speed_and_distance(drawn_frames_generator, tracks, is_tennis=SPORT=="tennis")
+    # drawn_frames_generator = drawer.draw_keypoints(drawn_frames_generator, court_keypoints, pitch_config)
+
+    player_stats_df = None
+    if SPORT == "tennis":
+        print("Detecting tennis shots and calculating stats...")
+        from analysis.tennis_shot_detector import TennisShotDetector
+        shot_detector = TennisShotDetector()
+        ball_shot_frames = shot_detector.get_ball_shot_frames(tracks.get('ball', []))
+        player_stats_df = shot_detector.calculate_stats(tracks, ball_shot_frames, fps=30)
+        
+        if player_stats_df is not None and not player_stats_df.empty:
+            drawn_frames_generator = drawer.draw_tennis_stats(drawn_frames_generator, player_stats_df, tracks=tracks)
     
     # Only draw mini-map PIP for sports where it adds value (not tennis)
     if court_image_path is not None:
@@ -336,7 +358,7 @@ def process_tracker_remote(enable_team_assignment: bool = True):
     # Save video directly to the volume
     output_dir = '/volume/outputs'
     os.makedirs(output_dir, exist_ok=True)
-    output_path = f'{output_dir}/tracker_with_team.mp4'
+    output_path = f'{output_dir}/{input_filename}_processed.mp4'
     
     print(f"Saving video to volume at {output_path}...")
     save_video(drawn_frames_generator, output_path)
@@ -349,18 +371,27 @@ def process_tracker_remote(enable_team_assignment: bool = True):
     return video_bytes
 
 @app.local_entrypoint()
-def main(no_teams: bool = False):
+def main(
+    sport: str = "basketball",
+    input_filename: str = "basketball_test2.mp4",
+    output_dir: str = "",
+    no_teams: bool = False,
+):
     enable_teams = not no_teams
     status = "ENABLED" if enable_teams else "DISABLED"
-    print(f"Starting Modal remote tracking job (team assignment: {status})...")
+    print(f"Starting Modal remote tracking job (sport={sport}, file={input_filename}, teams={status})...")
     
-    video_bytes = process_tracker_remote.remote(enable_team_assignment=enable_teams)
+    video_bytes = process_tracker_remote.remote(
+        sport=sport, 
+        input_filename=input_filename, 
+        enable_team_assignment=enable_teams
+    )
     
     if video_bytes:
-        output_dir = os.path.join(os.path.dirname(__file__), 'outputs')
+        if not output_dir:
+            output_dir = os.path.join(os.path.dirname(__file__), 'outputs')
         os.makedirs(output_dir, exist_ok=True)
-        suffix = 'tracker_with_team' if enable_teams else 'tracker_no_team1'
-        output_path = os.path.join(output_dir, f'{suffix}.mp4')
+        output_path = os.path.join(output_dir, f'{input_filename}_processed.mp4')
         
         with open(output_path, "wb") as f:
             f.write(video_bytes)

@@ -52,7 +52,11 @@ class TacticalViewConverter:
             list: Tactical player positions matching the frames order.
         """
         tactical_player_positions = []
-        last_good_camera_movement = [0.0, 0.0]
+        
+        anchor_source_points = None
+        anchor_target_points = None
+        anchor_indices = []
+        anchor_camera_movement = [0.0, 0.0]
 
         
         # Create a list of only the non-None config points.
@@ -104,6 +108,8 @@ class TacticalViewConverter:
             
             # RANSAC pre-filter: remove gross outliers before homography update
             inlier_indices = valid_indices
+            updated_this_frame = False
+            
             if len(valid_indices) >= 4:
                 source_points = np.array([frame_xy[i] for i in valid_indices], dtype=np.float32)
                 target_points = np.array([valid_config_points[i] for i in valid_indices], dtype=np.float32)
@@ -134,23 +140,60 @@ class TacticalViewConverter:
                 if self.transformer:
                     try:
                         self.transformer.update(source_inliers, target_inliers)
+                        updated_this_frame = True
                         if camera_movement_per_frame:
-                            last_good_camera_movement = camera_movement_per_frame[frame_ix]
+                            anchor_source_points = source_inliers
+                            anchor_target_points = target_inliers
+                            anchor_indices = inlier_indices
+                            anchor_camera_movement = camera_movement_per_frame[frame_ix]
                     except ValueError:
                         pass
-            elif frame_ix % 10 == 0:
+            
+            if not updated_this_frame and camera_movement_per_frame and anchor_source_points is not None:
+                # HYBRID KEYPOINT FUSION MODE
+                # The normal RANSAC update failed (either < 4 keypoints or bad detections).
+                # We fill the gaps with virtual keypoints projected from the anchor frame.
+                delta = np.array(camera_movement_per_frame[frame_ix]) - np.array(anchor_camera_movement)
+                virtual_source_points = anchor_source_points + delta
+                
+                hybrid_source = []
+                hybrid_target = []
+                
+                # 1. Add any REAL points we successfully detected
+                # If valid_indices < 4, we trust them. If >= 4 but they failed RANSAC, they are junk.
+                trusted_indices = valid_indices if len(valid_indices) < 4 else []
+                real_indices = set(trusted_indices)
+                for i in trusted_indices:
+                    hybrid_source.append(frame_xy[i])
+                    hybrid_target.append(valid_config_points[i])
+                
+                # 2. Fill the remaining required points with VIRTUAL points
+                for i, idx in enumerate(anchor_indices):
+                    if idx not in real_indices:
+                        hybrid_source.append(virtual_source_points[i])
+                        hybrid_target.append(anchor_target_points[i])
+                        
+                if len(hybrid_source) >= 4:
+                    hybrid_source = np.array(hybrid_source, dtype=np.float32)
+                    hybrid_target = np.array(hybrid_target, dtype=np.float32)
+                    
+                    try:
+                        self.transformer.update(hybrid_source, hybrid_target)
+                        print(f"  [Tactical] Frame {frame_ix} | valid={len(valid_indices)} → HYBRID_MODE "
+                              f"({len(trusted_indices)} real + {len(hybrid_source)-len(trusted_indices)} virtual)")
+                    except ValueError:
+                        print(f"  [Tactical] Frame {frame_ix} | valid={len(valid_indices)} → HYBRID_MODE (FAILED SPREAD)")
+                else:
+                    print(f"  [Tactical] Frame {frame_ix} | valid={len(valid_indices)} → SKIPPED (< 4 hybrid points)")
+            elif not updated_this_frame and frame_ix % 10 == 0:
                 print(f"  [Tactical] Frame {frame_ix} | valid={len(valid_indices)} → "
-                      f"inliers={len(inlier_indices)} | SKIPPED (< 4 inliers)")
+                      f"inliers={len(inlier_indices)} | SKIPPED (< 4 inliers, no anchors)")
 
             # Map the positions locally using current transformation state
             if self.transformer.m is not None:
-                delta = np.array([0.0, 0.0])
-                if camera_movement_per_frame:
-                    delta = np.array(camera_movement_per_frame[frame_ix]) - np.array(last_good_camera_movement)
-                    
                 for player_id, player_data in frame_tracks.items():
                     bbox = player_data["bbox"]
-                    player_position = np.array([get_foot_position(bbox)]) - delta
+                    player_position = np.array([get_foot_position(bbox)])
                     
                     tactical_position = self.transformer.transform_points(player_position)
 

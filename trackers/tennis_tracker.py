@@ -6,7 +6,7 @@ import os
 import numpy as np
 from ultralytics import YOLO 
 import supervision as sv
-from utils import measure_distance, get_center_of_bbox, get_foot_position, read_stub, save_stub
+from utils import measure_distance, get_center_of_bbox, read_stub, save_stub
 
 class TennisTracker:
     def __init__(self, model_path):
@@ -19,6 +19,7 @@ class TennisTracker:
         )
 
     def add_position_to_tracks(self, tracks):
+        from utils import get_center_of_bbox, get_foot_position
         for object_type, object_tracks in tracks.items():
             for frame_num, track in enumerate(object_tracks):
                 for track_id, track_info in track.items():
@@ -151,45 +152,16 @@ class TennisTracker:
                 track_id = frame_detection[4]
                 tracks["players"][frame_num][track_id] = {"bbox": bbox}
 
-            # replace this block in get_object_tracks
             if ball_id is not None:
                 ball_detections = detection_supervision[detection_supervision.class_id == ball_id]
                 chosen_bbox = None
-                
-                if len(ball_detections) > 0:
-                    # get all ball candidates this frame
-                    candidates = [
-                        (frame_det[0].tolist(), frame_det[2])   # (bbox, confidence)
-                        for frame_det in ball_detections
-                    ]
-                    
-                    if len(candidates) == 1:
-                        # no ambiguity — use it directly
-                        chosen_bbox = candidates[0][0]
-                    else:
-                        # multiple detections — use positional continuity
-                        last_ball = None
-                        for past_frame in range(frame_num - 1, max(frame_num - 10, -1), -1):
-                            if tracks["ball"][past_frame].get(1):
-                                last_ball = tracks["ball"][past_frame][1]["bbox"]
-                                break
-
-                        if last_ball is None:
-                            # no prior position yet — fall back to max confidence
-                            chosen_bbox = max(candidates, key=lambda x: x[1])[0]
-                        else:
-                            last_center = (
-                                (last_ball[0] + last_ball[2]) / 2,
-                                (last_ball[1] + last_ball[3]) / 2,
-                            )
-                            def score(candidate):
-                                bbox, conf = candidate
-                                cx = (bbox[0] + bbox[2]) / 2
-                                cy = (bbox[1] + bbox[3]) / 2
-                                dist = ((cx - last_center[0])**2 + (cy - last_center[1])**2) ** 0.5
-                                return dist   # lower is better
-
-                            chosen_bbox = min(candidates, key=score)[0]
+                max_confidence = 0
+                for frame_detection in ball_detections:
+                    bbox = frame_detection[0].tolist()
+                    confidence = frame_detection[2]
+                    if max_confidence < confidence:
+                        chosen_bbox = bbox
+                        max_confidence = confidence
 
                 if chosen_bbox is not None:
                     tracks["ball"][frame_num][1] = {"bbox": chosen_bbox}
@@ -197,7 +169,7 @@ class TennisTracker:
             if (frame_num + 1) % 30 == 0 or (frame_num + 1) == total_frames:
                 print(f"  [Tennis Tracking] Frame {frame_num + 1:5d} / {total_frames}")
 
-        tracks["ball"] = self.interpolate_ball_positions(tracks["ball"])    
+        tracks["ball"] = self.interpolate_ball_positions(tracks["ball"])
 
         if stub_path:
             os.makedirs(stub_dir, exist_ok=True)

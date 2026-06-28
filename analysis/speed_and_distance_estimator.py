@@ -4,16 +4,20 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '../'))
 from utils import measure_distance
 
 class SpeedAndDistanceEstimator():
-    def __init__(self, frame_rate=30, window_size=5):
+    def __init__(self, frame_rate=30, window_size=5, calculate_ball_speed=False):
         self.frame_rate = frame_rate
         self.window_size = window_size
+        self.calculate_ball_speed = calculate_ball_speed
         
     def add_speed_and_distance_to_tracks(self, tracks):
         total_distance = {}
         
         for object_type, object_tracks in tracks.items():
-            if object_type in ["ball", "referees"]:
+            if object_type == "referees":
                 continue 
+            
+            if object_type == "ball" and not self.calculate_ball_speed:
+                continue
                 
             number_of_frames = len(object_tracks)
             total_distance[object_type] = {}
