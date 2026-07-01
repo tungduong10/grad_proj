@@ -100,7 +100,7 @@ def run_modal_task(sport: str, filename: str, input_path: str):
     print(f"Calling deployed Modal function for {sport} - {filename}...")
     try:
         process_fn = modal.Function.from_name(MODAL_APP_NAME, "process_tracker_remote")
-        video_bytes = process_fn.remote(
+        result = process_fn.remote(
             sport=sport,
             input_filename=filename,
             enable_team_assignment=True,
@@ -109,16 +109,27 @@ def run_modal_task(sport: str, filename: str, input_path: str):
         print(f"Modal remote call failed: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to process video remotely: {e}")
 
+    if not result:
+        raise HTTPException(status_code=500, detail="Remote tracking failed. No result returned.")
+
+    # 3. Extract video bytes (handle both old raw-bytes and new dict format)
+    if isinstance(result, dict):
+        video_bytes = result.get("video")
+        heatmaps = result.get("heatmaps", {})
+    else:
+        video_bytes = result
+        heatmaps = {}
+
     if not video_bytes:
         raise HTTPException(status_code=500, detail="Remote tracking failed. No video returned.")
 
-    # 3. Save the returned bytes
+    # 4. Save the video bytes
     output_filename = f"{filename}_processed.mp4"
     output_path = OUTPUT_DIR / output_filename
     with open(output_path, "wb") as f:
         f.write(video_bytes)
 
-    # 4. Re-encode to H.264 so browsers can play it inline
+    # 5. Re-encode to H.264 so browsers can play it inline
     #    (OpenCV's mp4v codec is not browser-compatible)
     browser_filename = f"{filename}_browser.mp4"
     browser_path = OUTPUT_DIR / browser_filename
@@ -143,7 +154,18 @@ def run_modal_task(sport: str, filename: str, input_path: str):
         print(f"ffmpeg re-encode failed: {e.stderr}")
         browser_filename = output_filename
 
-    return browser_filename
+    # 6. Save heatmap PNGs (if any)
+    heatmap_filenames = {}
+    for heatmap_key, png_bytes in heatmaps.items():
+        # TODO(security): filename is derived from internal keys, not user input
+        heatmap_filename = f"{filename}_{heatmap_key}_heatmap.png"
+        heatmap_path = OUTPUT_DIR / heatmap_filename
+        with open(heatmap_path, "wb") as f:
+            f.write(png_bytes)
+        heatmap_filenames[heatmap_key] = heatmap_filename
+        print(f"Heatmap saved: {heatmap_path}")
+
+    return {"video_filename": browser_filename, "heatmap_filenames": heatmap_filenames}
 
 @app.post("/api/process/")
 async def process_file(filename: str = Form(...), sport: str = Form(...)):
@@ -153,7 +175,7 @@ async def process_file(filename: str = Form(...), sport: str = Form(...)):
         raise HTTPException(status_code=404, detail="File not found")
 
     try:
-        output_filename = await run_in_threadpool(
+        result = await run_in_threadpool(
             run_modal_task,
             sport=sport,
             filename=filename,
@@ -164,16 +186,33 @@ async def process_file(filename: str = Form(...), sport: str = Form(...)):
 
     return {
         "message": "Processing done",
-        "output_filename": output_filename
+        "output_filename": result["video_filename"],
+        "heatmap_filenames": result.get("heatmap_filenames", {}),
     }
 
 @app.get("/api/download/{filename}")
 def download_file(filename: str):
-    file_path = OUTPUT_DIR / filename
+    # Sanitize: only allow the basename to prevent path traversal
+    safe_name = Path(filename).name
+    file_path = OUTPUT_DIR / safe_name
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="File not found")
     
-    return FileResponse(str(file_path), media_type="video/mp4", filename=filename)
+    return FileResponse(str(file_path), media_type="video/mp4", filename=safe_name)
+
+@app.get("/api/heatmap/{filename}")
+def download_heatmap(filename: str):
+    """Serve a heatmap PNG image by filename."""
+    # Sanitize: only allow the basename to prevent path traversal
+    safe_name = Path(filename).name
+    file_path = OUTPUT_DIR / safe_name
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Heatmap not found")
+    # Verify it's actually a PNG file
+    if not safe_name.endswith(".png"):
+        raise HTTPException(status_code=400, detail="Invalid heatmap file type")
+    
+    return FileResponse(str(file_path), media_type="image/png", filename=safe_name)
 
 # ── Serve Frontend Static Files ───────────────────────────────────
 if FRONTEND_DIST_DIR.exists():

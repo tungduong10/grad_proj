@@ -3,3 +3,4 @@ from .football_acquisition import FootballBallAssigner
 from .basketball_acquisition import BasketballBallAssigner
 from .pass_and_interception_detector import PassAndInterceptionDetector
 from .tennis_shot_detector import TennisShotDetector
+from .heatmap_generator import HeatmapGenerator

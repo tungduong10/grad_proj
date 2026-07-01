@@ -366,9 +366,24 @@ def process_tracker_remote(sport: str, input_filename: str, enable_team_assignme
     print("Reading output video bytes to return to local machine...")
     with open(output_path, "rb") as f:
         video_bytes = f.read()
-        
+
+    # ── Generate per-team heatmaps (football & basketball only) ──
+    heatmaps = {}
+    if SPORT in ["football", "basketball"] and court_image_path is not None:
+        print("Generating per-team heatmaps...")
+        from analysis.heatmap_generator import HeatmapGenerator
+        heatmap_gen = HeatmapGenerator(config=pitch_config, court_image_path=court_image_path)
+
+        for team_idx in (0, 1):
+            png_bytes = heatmap_gen.generate(tactical_player_positions, tracks, team=team_idx)
+            heatmaps[f"team_{team_idx}"] = png_bytes
+            print(f"  → Team {team_idx + 1} heatmap: {len(png_bytes)} bytes")
+
     print("Finished processing on Modal remote worker successfully!")
-    return video_bytes
+    return {
+        "video": video_bytes,
+        "heatmaps": heatmaps,
+    }
 
 @app.local_entrypoint()
 def main(
@@ -381,21 +396,30 @@ def main(
     status = "ENABLED" if enable_teams else "DISABLED"
     print(f"Starting Modal remote tracking job (sport={sport}, file={input_filename}, teams={status})...")
     
-    video_bytes = process_tracker_remote.remote(
+    result = process_tracker_remote.remote(
         sport=sport, 
         input_filename=input_filename, 
         enable_team_assignment=enable_teams
     )
     
-    if video_bytes:
+    if result:
         if not output_dir:
             output_dir = os.path.join(os.path.dirname(__file__), 'outputs')
         os.makedirs(output_dir, exist_ok=True)
+
+        # Save processed video
+        video_bytes = result.get("video") if isinstance(result, dict) else result
         output_path = os.path.join(output_dir, f'{input_filename}_processed.mp4')
-        
         with open(output_path, "wb") as f:
             f.write(video_bytes)
-            
         print(f"Success! Video saved to Volume AND downloaded locally to {output_path}")
+
+        # Save heatmap PNGs (if any)
+        heatmaps = result.get("heatmaps", {}) if isinstance(result, dict) else {}
+        for heatmap_key, png_bytes in heatmaps.items():
+            heatmap_path = os.path.join(output_dir, f'{input_filename}_{heatmap_key}_heatmap.png')
+            with open(heatmap_path, "wb") as f:
+                f.write(png_bytes)
+            print(f"Heatmap saved: {heatmap_path}")
     else:
         print("Remote tracking failed. Check Modal logs.")
