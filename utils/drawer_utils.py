@@ -293,8 +293,8 @@ class Drawer:
             return
 
         img_h, img_w = court_image.shape[:2]
-        # PIP size (larger for better visibility)
-        pip_h = 350
+        # PIP size
+        pip_h = 200
         pip_w = int(img_w * (pip_h / img_h))
         
         # Scaling factors from tactical config space (cm) to original image pixels
