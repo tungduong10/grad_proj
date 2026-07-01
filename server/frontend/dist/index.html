@@ -138,31 +138,53 @@
                 </div>
 
                 <!-- Bottom Row: Result/Preview -->
-                <div class="flex flex-col items-center justify-center bg-black/40 rounded-xl border border-slate-800 overflow-hidden aspect-video relative w-full">
-                    
-                    <!-- Processing Overlay -->
-                    <div id="processingOverlay" class="absolute inset-0 bg-slate-900/80 backdrop-blur-sm z-20 flex flex-col items-center justify-center hidden">
-                        <div class="loader mb-4"></div>
-                        <h3 class="text-lg font-medium text-blue-400 mb-1">AI Processing</h3>
-                        <p class="text-xs text-slate-400 max-w-[80%] text-center">This runs remote ML inference on Modal. It might take a few minutes...</p>
+                <div class="grid md:grid-cols-3 gap-8">
+                    <!-- Video Container -->
+                    <div class="md:col-span-2 flex flex-col items-center justify-center bg-black/40 rounded-xl border border-slate-800 overflow-hidden aspect-video relative w-full">
+                        
+                        <!-- Processing Overlay -->
+                        <div id="processingOverlay" class="absolute inset-0 bg-slate-900/80 backdrop-blur-sm z-20 flex flex-col items-center justify-center hidden">
+                            <div class="loader mb-4"></div>
+                            <h3 class="text-lg font-medium text-blue-400 mb-1">AI Processing</h3>
+                            <p class="text-xs text-slate-400 max-w-[80%] text-center">This runs remote ML inference on Modal. It might take a few minutes...</p>
+                        </div>
+
+                        <!-- Video Element -->
+                        <video id="resultVideo" class="w-full h-full object-contain hidden" controls></video>
+                        
+                        <!-- Empty State -->
+                        <div id="emptyState" class="flex flex-col items-center text-slate-600 p-8 text-center">
+                            <i class="fa-solid fa-video text-4xl mb-3 opacity-50"></i>
+                            <p class="text-sm">Processed video will appear here</p>
+                        </div>
                     </div>
 
-                    <!-- Video Element -->
-                    <video id="resultVideo" class="w-full h-full object-contain hidden" controls></video>
-                    
-                    <!-- Empty State -->
-                    <div id="emptyState" class="flex flex-col items-center text-slate-600 p-8 text-center">
-                        <i class="fa-solid fa-video text-4xl mb-3 opacity-50"></i>
-                        <p class="text-sm">Processed video will appear here</p>
+                    <!-- Heatmap Preview Container -->
+                    <div id="heatmapPreviewContainer" class="hidden flex-col gap-4">
+                        <div class="bg-black/40 rounded-xl border border-slate-800 p-4 flex flex-col items-center justify-center aspect-square w-full overflow-hidden">
+                            <img id="heatmapPreviewImg" class="w-full h-full object-contain" src="" alt="Heatmap preview">
+                        </div>
+                        <div class="flex gap-2">
+                            <button id="btnViewTeam1" class="flex-1 bg-blue-900/50 hover:bg-blue-800/50 text-blue-200 py-2 px-3 rounded-lg border border-blue-700/50 transition-colors text-sm font-medium">Team 1</button>
+                            <button id="btnViewTeam2" class="flex-1 bg-pink-900/50 hover:bg-pink-800/50 text-pink-200 py-2 px-3 rounded-lg border border-pink-700/50 transition-colors text-sm font-medium opacity-50">Team 2</button>
+                        </div>
                     </div>
                 </div>
             </main>
 
-            <!-- Download Button (Hidden until ready) -->
-            <div id="downloadContainer" class="mt-6 flex justify-end hidden">
+            <!-- Download Buttons (Hidden until ready) -->
+            <div id="downloadContainer" class="mt-6 flex justify-end gap-4 hidden">
                 <a id="downloadLink" href="#" download class="bg-slate-800 hover:bg-slate-700 text-white py-2 px-5 rounded-lg border border-slate-600 transition-colors flex items-center gap-2 text-sm font-medium shadow-md">
                     <i class="fa-solid fa-download"></i>
-                    Download Result
+                    Download Video
+                </a>
+                <a id="downloadHeatmap0" href="#" download class="hidden bg-blue-900/50 hover:bg-blue-800/50 text-blue-200 py-2 px-5 rounded-lg border border-blue-700/50 transition-colors flex items-center gap-2 text-sm font-medium shadow-md">
+                    <i class="fa-solid fa-map"></i>
+                    Team 1 Heatmap
+                </a>
+                <a id="downloadHeatmap1" href="#" download class="hidden bg-pink-900/50 hover:bg-pink-800/50 text-pink-200 py-2 px-5 rounded-lg border border-pink-700/50 transition-colors flex items-center gap-2 text-sm font-medium shadow-md">
+                    <i class="fa-solid fa-map"></i>
+                    Team 2 Heatmap
                 </a>
             </div>
         </div>
@@ -183,6 +205,13 @@
         
         const downloadContainer = document.getElementById('downloadContainer');
         const downloadLink = document.getElementById('downloadLink');
+        const downloadHeatmap0 = document.getElementById('downloadHeatmap0');
+        const downloadHeatmap1 = document.getElementById('downloadHeatmap1');
+        
+        const heatmapPreviewContainer = document.getElementById('heatmapPreviewContainer');
+        const heatmapPreviewImg = document.getElementById('heatmapPreviewImg');
+        const btnViewTeam1 = document.getElementById('btnViewTeam1');
+        const btnViewTeam2 = document.getElementById('btnViewTeam2');
 
         let currentFile = null;
         let uploadedFilename = null;
@@ -220,6 +249,8 @@
             emptyState.classList.remove('hidden');
             downloadContainer.classList.add('hidden');
             statusMessage.classList.add('hidden');
+            heatmapPreviewContainer.classList.add('hidden');
+            heatmapPreviewContainer.classList.remove('flex');
             
             // Auto-upload
             uploadToServer(file);
@@ -265,6 +296,8 @@
             emptyState.classList.add('hidden');
             resultVideo.classList.add('hidden');
             downloadContainer.classList.add('hidden');
+            heatmapPreviewContainer.classList.add('hidden');
+            heatmapPreviewContainer.classList.remove('flex');
 
             const formData = new FormData();
             formData.append('filename', uploadedFilename);
@@ -287,6 +320,7 @@
 
                 const data = await res.json();
                 const outputName = data.output_filename;
+                const heatmaps = data.heatmap_filenames || {};
 
                 // Success
                 statusMessage.classList.remove('text-blue-400');
@@ -301,6 +335,58 @@
                 
                 downloadLink.href = videoUrl;
                 downloadLink.download = outputName;
+                
+                if (heatmaps.team_0) {
+                    downloadHeatmap0.href = `/api/heatmap/${encodeURIComponent(heatmaps.team_0)}`;
+                    downloadHeatmap0.download = heatmaps.team_0;
+                    downloadHeatmap0.classList.remove('hidden');
+                } else {
+                    downloadHeatmap0.classList.add('hidden');
+                }
+                
+                if (heatmaps.team_1) {
+                    downloadHeatmap1.href = `/api/heatmap/${encodeURIComponent(heatmaps.team_1)}`;
+                    downloadHeatmap1.download = heatmaps.team_1;
+                    downloadHeatmap1.classList.remove('hidden');
+                } else {
+                    downloadHeatmap1.classList.add('hidden');
+                }
+                
+                if (heatmaps.team_0 || heatmaps.team_1) {
+                    heatmapPreviewContainer.classList.remove('hidden');
+                    heatmapPreviewContainer.classList.add('flex');
+                    
+                    const url0 = heatmaps.team_0 ? `/api/heatmap/${encodeURIComponent(heatmaps.team_0)}` : '';
+                    const url1 = heatmaps.team_1 ? `/api/heatmap/${encodeURIComponent(heatmaps.team_1)}` : '';
+                    
+                    heatmapPreviewImg.src = url0 || url1;
+                    
+                    btnViewTeam1.onclick = () => {
+                        if (url0) heatmapPreviewImg.src = url0;
+                        btnViewTeam1.classList.remove('opacity-50');
+                        btnViewTeam2.classList.add('opacity-50');
+                    };
+                    
+                    btnViewTeam2.onclick = () => {
+                        if (url1) heatmapPreviewImg.src = url1;
+                        btnViewTeam2.classList.remove('opacity-50');
+                        btnViewTeam1.classList.add('opacity-50');
+                    };
+                    
+                    if (!url0) btnViewTeam1.classList.add('hidden');
+                    else btnViewTeam1.classList.remove('hidden');
+                    
+                    if (!url1) btnViewTeam2.classList.add('hidden');
+                    else btnViewTeam2.classList.remove('hidden');
+                    
+                    if (url0) {
+                        btnViewTeam1.classList.remove('opacity-50');
+                        btnViewTeam2.classList.add('opacity-50');
+                    } else if (url1) {
+                        btnViewTeam2.classList.remove('opacity-50');
+                    }
+                }
+                
                 downloadContainer.classList.remove('hidden');
 
             } catch (err) {

@@ -325,14 +325,10 @@ class Drawer:
                     
                     color = player_colors.get(player_id, (0, 0, 255))
                     
-                    # Calculate proportional radius and thickness based on court image width (approx 4%)
-                    radius = int(img_w * 0.04)
-                    thickness = max(2, int(radius * 0.15))
-                    
-                    # Draw filled circle (larger radius before scaling)
-                    cv2.circle(pip_frame, (pt_x, pt_y), radius, color, -1)
+                    # Draw filled circle
+                    cv2.circle(pip_frame, (pt_x, pt_y), 8, color, -1)
                     # Draw outline
-                    cv2.circle(pip_frame, (pt_x, pt_y), radius, (0, 0, 0), thickness)
+                    cv2.circle(pip_frame, (pt_x, pt_y), 8, (0, 0, 0), 2)
                     
             # Resize pip to fit corner
             pip_resized = cv2.resize(pip_frame, (pip_w, pip_h))
